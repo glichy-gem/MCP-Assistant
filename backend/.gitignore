@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+connections.json
+connections.bad
+.connections.*.tmp
+users.json
+users.bad
+.users.*.tmp
+.session_secret

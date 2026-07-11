@@ -1,0 +1,12 @@
+# Claude Code session data (memory, plans, transcripts)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
