@@ -39,7 +39,6 @@ export function UserMenu({ user, onOpenSettings, onSignOut }: Props) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium text-white">{label}</span>
-            <span className="block truncate text-[11px] text-white/50">{user.email || user.username}</span>
           </span>
           <ChevronsUpDown className="size-3.5 shrink-0 text-white/50" />
         </button>

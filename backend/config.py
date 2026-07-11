@@ -1,10 +1,10 @@
 """Persistent config store: app settings + MCP servers.
 
 Backed by backend/connections.json (git-ignored). First run migrates the MCP
-server from mcp/.env. The LLM's Azure credentials live in backend/.env (not here).
+server from mcp/.env. The LLM's Groq API key lives in backend/.env.
 
 Model:
-  app_settings: { azure_deployment? }   # optional Azure OpenAI model override
+  app_settings: { groq_model? }   # optional Groq model override
   mcp_servers:  each reached via endpoint + api_key.
 
 Secret handling:
@@ -77,7 +77,7 @@ def _migrate_from_env() -> dict:
         servers.append(
             {
                 "id": _mkid("srv"),
-                "name": "ServiceNow (Azure Logic App)",
+                "name": "ServiceNow MCP",
                 "endpoint": mcp_env["MCP_ENDPOINT"],
                 "auth_header": mcp_env.get("MCP_AUTH_HEADER", "X-API-Key"),
                 "api_key": mcp_env["MCP_API_KEY"],
@@ -89,13 +89,13 @@ def _migrate_from_env() -> dict:
 
 
 def _normalize_state() -> None:
-    """Ensure required keys/fields exist; drop retired keys (accounts, cloud)."""
+    """Ensure required keys/fields exist; drop retired keys (accounts, cloud, azure)."""
     _state.setdefault("app_settings", {})
     # Retire the cloud-provider concept (feature removed).
     _state["app_settings"].pop("selected_cloud", None)
-    # Coerce an unknown/removed active LLM provider back to the default.
-    if _state["app_settings"].get("llm_provider") not in (None, *LLM_PROVIDERS):
-        _state["app_settings"].pop("llm_provider", None)
+    # Retire Azure LLM provider (Groq only).
+    _state["app_settings"].pop("llm_provider", None)
+    _state["app_settings"].pop("azure_deployment", None)
 
     # Retire the accounts store (feature removed).
     _state.pop("accounts", None)
@@ -156,39 +156,6 @@ def state() -> dict:
 
 
 # --- App settings --------------------------------------------------------
-
-LLM_PROVIDERS = ("azure", "groq")
-DEFAULT_LLM_PROVIDER = "azure"
-
-
-def get_llm_provider() -> str:
-    p = state()["app_settings"].get("llm_provider", DEFAULT_LLM_PROVIDER)
-    return p if p in LLM_PROVIDERS else DEFAULT_LLM_PROVIDER
-
-
-def set_llm_provider(provider: str) -> str:
-    if provider not in LLM_PROVIDERS:
-        raise ValueError(f"provider must be one of: {', '.join(LLM_PROVIDERS)}")
-    with _lock:
-        _state["app_settings"]["llm_provider"] = provider
-        _save_locked()
-    return provider
-
-
-def get_selected_deployment() -> str | None:
-    """The user-selected Azure OpenAI chat deployment (None = use the .env default)."""
-    return state()["app_settings"].get("azure_deployment") or None
-
-
-def set_selected_deployment(name: str) -> str:
-    name = (name or "").strip()
-    if not name:
-        raise ValueError("deployment name is required")
-    with _lock:
-        _state["app_settings"]["azure_deployment"] = name
-        _save_locked()
-    return name
-
 
 def get_groq_model() -> str | None:
     """The user-selected Groq model (None = use the .env default)."""

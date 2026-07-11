@@ -50,7 +50,7 @@ function AppShell({
 }) {
   const composerRef = useRef<ComposerHandle>(null);
   const { messages, isStreaming, send, stop, clear } = useChat();
-  const { settings, setProvider, setModel } = useSettings();
+  const { settings, setModel } = useSettings();
   const [activePage, setActivePage] = useState<PageId>("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -101,7 +101,6 @@ function AppShell({
         onOpenChange={setSettingsOpen}
         settings={settings}
         user={user}
-        onSetProvider={setProvider}
         onSetModel={setModel}
       />
       <Toaster position="top-right" richColors theme={theme} closeButton />

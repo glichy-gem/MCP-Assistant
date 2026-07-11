@@ -212,14 +212,13 @@ def error_hint(exc) -> str:
     text = str(exc)
     if "500" in text or "InternalServerError" in text:
         return (
-            "This is a SERVER-SIDE 500 from the Logic App MCP server. The protocol handshake\n"
+            "This is a SERVER-SIDE 500 from the MCP server. The protocol handshake\n"
             "(initialize/ping) works and the API key is fine, but every tools/* operation faults\n"
             "on the server. Likely causes:\n"
-            "  - The ServiceNow API connection ('service-now') is unauthorized/expired -> re-authorize it in Azure.\n"
-            "  - A tool registration problem on the Logic App (re-check tools show 'Configured' in Foundry).\n"
-            "  - A Logic App runtime/backing-storage problem.\n"
-            "First step: look up the tracking Id shown above in the Logic App's Log stream / Application\n"
-            "Insights / 'Diagnose and solve problems' to see the real exception."
+            "  - The ServiceNow API connection is unauthorized/expired -> re-authorize it.\n"
+            "  - A tool registration/schema problem on the server.\n"
+            "  - A server runtime/backing-storage problem.\n"
+            "First step: check the server logs to see the real exception."
         )
     if "401" in text or "403" in text:
         return "A 401/403 means MCP_API_KEY or MCP_AUTH_HEADER is wrong; also double-check MCP_ENDPOINT."

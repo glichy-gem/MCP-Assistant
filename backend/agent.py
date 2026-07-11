@@ -26,41 +26,12 @@ from mcp_client import connect, result_text  # noqa: E402
 import config  # noqa: E402
 import rbac  # noqa: E402
 
-from openai import AsyncAzureOpenAI, AsyncOpenAI  # noqa: E402
+from openai import AsyncOpenAI  # noqa: E402
 
-AOAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT")
-AOAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-AOAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
-AOAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY") or None
-
-# --- Groq (alternative provider; OpenAI-compatible, fast free tier) ---
+# --- Groq (OpenAI-compatible, fast free tier) ---
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY") or None
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-
-# Azure SP for the Azure OpenAI call (from backend/.env).
-SP_TENANT_ENV = os.environ.get("AZURE_TENANT_ID")
-SP_CLIENT_ID_ENV = os.environ.get("AZURE_CLIENT_ID")
-SP_CLIENT_SECRET_ENV = os.environ.get("AZURE_CLIENT_SECRET")
-
-# ARM coordinates for listing available model deployments (optional; used by the
-# model picker). Account name is derived from the endpoint host if not set.
-ARM_SUB = os.environ.get("AZURE_SUBSCRIPTION_ID")
-ARM_RG = os.environ.get("AZURE_OPENAI_RESOURCE_GROUP")
-
-
-def _derived_account() -> str | None:
-    explicit = os.environ.get("AZURE_OPENAI_ACCOUNT")
-    if explicit:
-        return explicit
-    if AOAI_ENDPOINT:
-        host = urlparse(AOAI_ENDPOINT).hostname or ""
-        # e.g. tarun-m6teqobx-eastus2.openai.azure.com -> tarun-m6teqobx-eastus2
-        return host.split(".")[0] or None
-    return None
-
-
-ARM_ACCOUNT = _derived_account()
 
 # Model families that are NOT chat/completion models — hidden from the picker.
 _NON_CHAT = ("embedding", "whisper", "tts", "dall-e", "dalle", "sora", "moderation")
@@ -94,48 +65,9 @@ def enabled_tools():
     return {name.strip() for name in raw.split(",") if name.strip()}
 
 
-def llm_provider() -> str:
-    """The active LLM provider ('azure' | 'groq')."""
-    return config.get_llm_provider()
-
-
-def provider_configured(provider: str | None = None) -> bool:
-    """Whether the given (or active) provider has the config it needs to run."""
-    p = provider or llm_provider()
-    if p == "groq":
-        return bool(GROQ_API_KEY)
-    return bool(AOAI_ENDPOINT)
-
-
-def openai_auth_mode() -> str:
-    p = llm_provider()
-    if p == "groq":
-        return "api-key"
-    if AOAI_API_KEY:
-        return "api-key"
-    if SP_CLIENT_ID_ENV:
-        return "service-principal"
-    return "entra (az login)"
-
-
-def openai_auth_source() -> str | None:
-    if llm_provider() == "groq":
-        return "Groq"
-    return "Environment (.env)"
-
-
-def _get_credential():
-    """The Azure credential used for both the OpenAI call and ARM listing."""
-    from azure.identity import ClientSecretCredential, DefaultAzureCredential
-
-    if SP_TENANT_ENV and SP_CLIENT_ID_ENV and SP_CLIENT_SECRET_ENV:
-        return ClientSecretCredential(SP_TENANT_ENV, SP_CLIENT_ID_ENV, SP_CLIENT_SECRET_ENV)
-    return DefaultAzureCredential()
-
-
-def active_deployment() -> str:
-    """The chat deployment to use — the user's pick, else the .env default."""
-    return config.get_selected_deployment() or AOAI_DEPLOYMENT
+def provider_configured() -> bool:
+    """Whether Groq is configured."""
+    return bool(GROQ_API_KEY)
 
 
 def active_groq_model() -> str:
@@ -144,17 +76,13 @@ def active_groq_model() -> str:
 
 
 def active_model() -> str:
-    """The model id to send in the chat completion, for the active provider."""
-    if llm_provider() == "groq":
-        return active_groq_model()
-    return active_deployment()
+    """The model id to send in the chat completion."""
+    return active_groq_model()
 
 
 def list_models() -> list[str]:
-    """List selectable models for the active provider (for the model picker)."""
-    if llm_provider() == "groq":
-        return list_groq_models()
-    return list_chat_deployments()
+    """List selectable models for Groq (for the model picker)."""
+    return list_groq_models()
 
 
 def list_groq_models() -> list[str]:
@@ -181,72 +109,11 @@ def list_groq_models() -> list[str]:
         return []
 
 
-def list_chat_deployments() -> list[str]:
-    """List chat-capable deployment names on the Azure OpenAI account via ARM.
-
-    Returns [] if ARM coordinates are missing or the call fails (the UI then
-    just shows the current deployment).
-    """
-    if not (ARM_SUB and ARM_RG and ARM_ACCOUNT):
-        return []
-    try:
-        token = _get_credential().get_token("https://management.azure.com/.default").token
-        url = (
-            f"https://management.azure.com/subscriptions/{ARM_SUB}/resourceGroups/{ARM_RG}"
-            f"/providers/Microsoft.CognitiveServices/accounts/{ARM_ACCOUNT}"
-            f"/deployments?api-version=2023-05-01"
-        )
-        resp = httpx.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=20)
-        resp.raise_for_status()
-        names: list[str] = []
-        for d in resp.json().get("value", []):
-            model = (d.get("properties", {}).get("model", {}).get("name") or "").lower()
-            if any(x in model for x in _NON_CHAT):
-                continue
-            name = d.get("name")
-            if name:
-                names.append(name)
-        return sorted(names)
-    except Exception:
-        return []
-
-
-def build_client():
-    """Build the OpenAI-compatible client for the active LLM provider."""
-    if llm_provider() == "groq":
-        return _build_groq_client()
-    return _build_azure_client()
-
-
-def _build_groq_client() -> AsyncOpenAI:
+def build_client() -> AsyncOpenAI:
+    """Build the OpenAI-compatible client for Groq."""
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY is not set (see backend/.env).")
     return AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
-
-
-def _build_azure_client() -> AsyncAzureOpenAI:
-    if not AOAI_ENDPOINT:
-        raise RuntimeError("AZURE_OPENAI_ENDPOINT is not set (see backend/.env).")
-
-    # The Azure OpenAI SDK reads AZURE_OPENAI_API_KEY straight from the environment;
-    # an empty string there is treated as a (falsy) key and breaks AAD auth. Strip it.
-    if not (os.environ.get("AZURE_OPENAI_API_KEY") or "").strip():
-        os.environ.pop("AZURE_OPENAI_API_KEY", None)
-
-    if AOAI_API_KEY:
-        return AsyncAzureOpenAI(
-            azure_endpoint=AOAI_ENDPOINT,
-            api_key=AOAI_API_KEY,
-            api_version=AOAI_API_VERSION,
-        )
-
-    # Entra: service principal from backend/.env, else ambient identity.
-    token = _get_credential().get_token("https://cognitiveservices.azure.com/.default").token
-    return AsyncAzureOpenAI(
-        azure_endpoint=AOAI_ENDPOINT,
-        azure_ad_token=token,
-        api_version=AOAI_API_VERSION,
-    )
 
 
 def system_prompt() -> str:

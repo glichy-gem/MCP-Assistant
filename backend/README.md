@@ -4,58 +4,46 @@ A small web app where you chat in plain English and an LLM calls the **ServiceNo
 tools for you (create/get/update/list/delete incidents, search KB, browse catalog).
 
 ```
-Browser (frontend/ served)  ──►  FastAPI backend  ──►  Azure OpenAI (gpt-4o, tool-calling)
+Browser (frontend/ served)  ──►  FastAPI backend  ──►  Groq LLM (tool-calling)
                                        │  imports ../mcp/mcp_client.py    │ picks tool + args
-                                       └────── MCP client ──(tools/call)──► MCP server (Azure Logic App) ──► ServiceNow
+                                       └────── MCP client ──(tools/call)──► MCP server ──► ServiceNow
 ```
 
-Folder layout (top-level `Foundary/`):
+Folder layout:
 
-- **`backend/`** — this app (FastAPI + LLM tool-loop). `.env` holds Azure OpenAI SP creds.
+- **`backend/`** — this app (FastAPI + LLM tool-loop). `.env` holds `GROQ_API_KEY`.
 - **`frontend/`** — React 18 + TypeScript + Vite + Tailwind + shadcn/ui. `npm run build` emits
   `frontend/dist/`, which this backend serves at `/` and `/assets/*`.
 - **`mcp/`** — MCP client library + smoke-test scripts. `.env` holds `MCP_ENDPOINT` / `MCP_API_KEY`.
 
-- **Brain:** Azure OpenAI (deployment configured in `backend/.env` — `AZURE_OPENAI_ENDPOINT` +
-  `AZURE_OPENAI_DEPLOYMENT`). Auth is a **service principal** whose creds live in `backend/.env`
-  (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`). API-key and ambient-`az login`
-  fallbacks are also supported.
+- **Brain:** Groq LLM (free API key from https://console.groq.com, configured in `backend/.env` —
+  `GROQ_API_KEY` / `GROQ_MODEL`). OpenAI-compatible API.
 - **Hands:** one or more MCP servers registered on the **MCP** page. Each turn opens a session
-  per enabled server, merges their tools into a single OpenAI function list (names prefixed by
-  server slug, e.g. `servicenow_azure_logic_app__List_Records`), and routes each tool call back
+  per enabled server, merges their tools into a single function list (names prefixed by
+  server slug, e.g. `servicenow__List_Records`), and routes each tool call back
   to the originating server. Tool cards show which server answered.
 - **UI (React + shadcn/ui):** left-nav with **Chat**, **MCP**, and **Users** pages, plus a
-  bottom-left user block → **Settings** (active cloud + appearance). Streaming replies, inline
+  bottom-left user block → **Settings**. Streaming replies, inline
   tool-call cards, dark/light theme, keyboard shortcuts.
 
 ## Persistence: `backend/connections.json`
 
 Holds `{ app_settings, mcp_servers }` (git-ignored). On first startup the MCP server is migrated
 from `mcp/.env`; the JSON is the source of truth thereafter. Add/edit/delete MCP servers via the
-**MCP** page. The LLM's Azure credentials are **not** stored here — they stay in `backend/.env`.
+**MCP** page. The LLM's Groq API key lives in `backend/.env`.
 
 **Redaction:** MCP `api_key` is masked as `•••••<last4>` on GET. On PATCH, a blank secret means
 "keep existing".
 
-## Cloud mode + provenance
+## Provenance
 
-The app runs in **one active cloud at a time** (`app_settings.selected_cloud` in
-`connections.json`, default `azure`). Switching cloud (Settings modal, or `PUT /api/settings/cloud`)
-re-scopes the app:
-
-- **MCP servers** (`/api/mcp/servers`) — each has a `provider`, filtered to the active cloud.
-  `/api/tools`, `/api/health`, and the chat only see the active cloud's servers.
-- **AWS is a placeholder**: no Bedrock LLM and no AWS MCP servers yet. In AWS mode the pages show
-  an empty state and chat returns a clear "switch to Azure" message.
-
-**Provenance** — the agent tags every `tool_call`/`tool_result` SSE event with the `server` name.
+The agent tags every `tool_call`/`tool_result` SSE event with the `server` name.
 The UI shows it on each tool card (`via <MCP server>`), so you can see which server answered.
 
 Settings endpoints (session-gated):
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/settings` | `{selected_cloud, clouds, llm:{configured,deployment,auth,source}}` |
-| PUT | `/api/settings/cloud` | `{cloud}` → switch active cloud (app-wide) |
+| GET | `/api/settings` | `{role, llm:{configured,model}}` |
 
 ## Authentication
 
@@ -92,21 +80,17 @@ Users endpoints (admin-only):
 
 ## Setup
 
-From the project root (`Foundary/`):
+From the project root:
 
 ```powershell
 pip install -r backend/requirements.txt
 pip install -r mcp/requirements.txt
-Copy-Item backend\.env.example backend\.env   # then fill in the SP creds
+Copy-Item backend\.env.example backend\.env   # then fill in GROQ_API_KEY
 ```
 
 - MCP credentials are read from **`../mcp/.env`** — nothing to repeat here.
-- Azure OpenAI auth uses the **service principal** in `backend/.env`. `build_client()` acquires a token
-  via `ClientSecretCredential` and passes it as `azure_ad_token` (fresh per turn). Alternatives: an
-  API key, or your `az login` — see `.env.example`.
-- **Gotcha:** never leave an empty `AZURE_OPENAI_API_KEY=` in `.env` when using SP/AAD — the OpenAI
-  SDK reads it from the env and an empty value is treated as a (bad) key. `build_client()` strips an
-  empty one defensively, but keep the line out.
+- Groq API key is configured in `backend/.env`: `GROQ_API_KEY` from https://console.groq.com.
+  The LLM model defaults to `llama-3.3-70b-versatile` but can be overridden with `GROQ_MODEL`.
 
 ## Run
 
@@ -142,16 +126,12 @@ in ServiceNow `dev424497`.
 | GET | `/` | Chat UI (built React bundle from `frontend/dist/`; 503 with hint if not built) |
 | GET | `/assets/*` | Vite-emitted JS/CSS from `frontend/dist/assets/` |
 | GET | `/api/tools` | Per-server tool listing: `{servers:[{id,name,tools,status}], count}` |
-| GET | `/api/health` | Per-MCP-server status + Azure OpenAI info |
+| GET | `/api/health` | Per-MCP-server status + LLM info |
 | GET | `/api/mcp/servers` | List (redacted) MCP servers |
 | POST | `/api/mcp/servers` | Add MCP server. Body: `{name, endpoint, auth_header?, api_key, enabled?}` |
 | PATCH | `/api/mcp/servers/{id}` | Update. Empty `api_key` = keep existing |
 | DELETE | `/api/mcp/servers/{id}` | Remove |
 | POST | `/api/mcp/servers/{id}/probe` | Open a transient session and return its tool list |
-| GET | `/api/connections` | List (redacted) cloud credentials |
-| POST | `/api/connections` | Add. Body: `{provider:"azure"\|"aws", name, …provider-fields}` |
-| PATCH | `/api/connections/{id}` | Update. Blank secrets = keep existing |
-| DELETE | `/api/connections/{id}` | Remove (409 if it's the current OpenAI Azure connection) |
 | POST | `/api/chat` | SSE stream of the assistant turn |
 
 ## RBAC — next phase (hooks are ready)

@@ -31,28 +31,22 @@ import { cn } from "@/lib/utils";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { api } from "@/lib/api";
 import { UsersAccessSection } from "@/components/UsersAccessSection";
-import type { AppSettings, LlmProvider, User, UserRole } from "@/types";
+import type { AppSettings, User, UserRole } from "@/types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   settings: AppSettings | null;
   user: User | null;
-  onSetProvider: (provider: LlmProvider) => Promise<boolean>;
   onSetModel: (deployment: string) => Promise<boolean>;
 }
 
-type Section = "provider" | "model" | "appearance" | "role" | "access";
+type Section = "model" | "appearance" | "role" | "access";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   user: "User",
   admin: "Admin",
   super_admin: "Super admin",
-};
-
-const PROVIDER_LABEL: Record<LlmProvider, string> = {
-  azure: "Azure OpenAI",
-  groq: "Groq",
 };
 
 const THEMES: { id: Theme; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -61,27 +55,17 @@ const THEMES: { id: Theme; label: string; icon: React.ComponentType<{ className?
   { id: "system", label: "System", icon: Monitor },
 ];
 
-export function SettingsModal({ open, onOpenChange, settings, user, onSetProvider, onSetModel }: Props) {
+export function SettingsModal({ open, onOpenChange, settings, user, onSetModel }: Props) {
   const { theme, setTheme } = useTheme();
   const [section, setSection] = useState<Section | null>(null);
   const [models, setModels] = useState<string[] | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [savingModel, setSavingModel] = useState(false);
-  const [savingProvider, setSavingProvider] = useState(false);
-
-  const provider = settings?.llm.provider ?? "azure";
 
   // Always start on the list when the modal (re)opens.
   useEffect(() => {
     if (open) setSection(null);
   }, [open]);
-
-  // Reset the cached model list whenever the active provider changes, so the
-  // picker reloads the new provider's models on next open.
-  useEffect(() => {
-    setModels(null);
-    setModelsError(null);
-  }, [provider]);
 
   // Lazily load models the first time the model section is opened (per provider).
   useEffect(() => {
@@ -100,23 +84,13 @@ export function SettingsModal({ open, onOpenChange, settings, user, onSetProvide
     };
   }, [section, models, modelsError]);
 
-  const providerAvailable = (p: LlmProvider) =>
-    p === "azure" ? true : !!settings?.llm.groq_available;
-
-  const handleProviderChange = async (next: LlmProvider) => {
-    if (next === provider) return;
-    setSavingProvider(true);
-    await onSetProvider(next);
-    setSavingProvider(false);
-  };
-
   const handleModelChange = async (deployment: string) => {
     setSavingModel(true);
     await onSetModel(deployment);
     setSavingModel(false);
   };
 
-  const modelValue = settings?.llm.configured ? settings.llm.deployment : "Not configured";
+  const modelValue = settings?.llm.configured ? settings.llm.model : "Not configured";
   const themeValue = theme.charAt(0).toUpperCase() + theme.slice(1);
   const role = settings?.role ?? user?.role ?? "user";
   const canManageConfig = settings?.can_manage_config ?? false;
@@ -129,8 +103,7 @@ export function SettingsModal({ open, onOpenChange, settings, user, onSetProvide
     icon: React.ComponentType<{ className?: string }>;
   }[] = [
     { id: "role", label: "Role", value: ROLE_LABEL[role], icon: ShieldCheck },
-    { id: "provider", label: "LLM provider", value: PROVIDER_LABEL[provider], icon: Server },
-    { id: "model", label: "Assistant model", value: modelValue, icon: Cpu },
+    { id: "model", label: "Model", value: modelValue, icon: Cpu },
     ...(canManageUsers
       ? [{ id: "access" as Section, label: "Users & access", value: "", icon: Users }]
       : []),
@@ -215,47 +188,6 @@ export function SettingsModal({ open, onOpenChange, settings, user, onSetProvide
           </div>
         )}
 
-        {/* DETAIL: LLM provider */}
-        {section === "provider" && (
-          <div className="grid gap-3">
-            <div className="grid gap-2">
-              {(settings?.llm.providers ?? ["azure", "groq"]).map((p) => {
-                const active = provider === p;
-                const available = providerAvailable(p);
-                const disabled = !canManageConfig || savingProvider || !available;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => void handleProviderChange(p)}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg border px-4 py-3 text-sm font-medium transition",
-                      active
-                        ? "border-primary bg-primary/10 text-primary shadow-inner"
-                        : "hover:border-primary/40 hover:bg-accent",
-                      disabled && "cursor-default opacity-60 hover:border-border hover:bg-transparent",
-                    )}
-                  >
-                    <span>{PROVIDER_LABEL[p]}</span>
-                    {active ? (
-                      <span className="text-[10px] uppercase">· active</span>
-                    ) : !available ? (
-                      <span className="text-[10px] uppercase text-muted-foreground">no key</span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="flex items-start gap-1.5 text-[11.5px] text-muted-foreground">
-              <Info className="mt-0.5 size-3 shrink-0" />
-              {canManageConfig
-                ? "Switches which LLM backend answers chats. Providers without a configured API key are disabled. Pick the model under “Assistant model”."
-                : "The LLM provider is managed by an admin."}
-            </p>
-          </div>
-        )}
-
         {/* DETAIL: Assistant model */}
         {section === "model" && (
           <div className="grid gap-3">
@@ -269,26 +201,26 @@ export function SettingsModal({ open, onOpenChange, settings, user, onSetProvide
                   <span className="text-xs font-medium text-muted-foreground">Chat model</span>
                   {modelsError ? (
                     <Select
-                      value={settings.llm.deployment}
+                      value={settings.llm.model}
                       onValueChange={(v) => void handleModelChange(v)}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={settings.llm.deployment}>
-                          {settings.llm.deployment}
+                        <SelectItem value={settings.llm.model}>
+                          {settings.llm.model}
                         </SelectItem>
                       </SelectContent>
                     </Select>
                   ) : models === null ? (
                     <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-[12.5px] text-muted-foreground">
                       <Loader2 className="size-3.5 animate-spin" />
-                      Loading deployments…
+                      Loading models…
                     </div>
                   ) : (
                     <Select
-                      value={settings.llm.deployment}
+                      value={settings.llm.model}
                       onValueChange={(v) => void handleModelChange(v)}
                       disabled={savingModel || !canManageConfig}
                     >
@@ -309,13 +241,8 @@ export function SettingsModal({ open, onOpenChange, settings, user, onSetProvide
                   <Info className="mt-0.5 size-3 shrink-0" />
                   {modelsError
                     ? "Couldn't list models — showing the active model only. " + modelsError
-                    : provider === "groq"
-                      ? "Models available on Groq. Pick a tool-capable model like llama-3.3-70b-versatile."
-                      : "Chat-capable deployments on this Azure OpenAI resource. Embedding and other non-chat models are hidden."}
+                    : "Available Groq models. Pick a tool-capable model like llama-3.3-70b-versatile."}
                 </p>
-                <div className="text-[11.5px] text-muted-foreground">
-                  Auth: {settings.llm.auth} · Source: {settings.llm.source ?? "—"}
-                </div>
               </>
             )}
           </div>

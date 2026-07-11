@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import type { AppSettings, LlmProvider } from "@/types";
+import type { AppSettings } from "@/types";
 
 export function useSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -21,18 +21,6 @@ export function useSettings() {
     void refresh();
   }, [refresh]);
 
-  const setProvider = useCallback(async (provider: LlmProvider) => {
-    try {
-      const next = await api.settings.setProvider(provider);
-      setSettings(next);
-      toast.success(`LLM provider: ${provider === "groq" ? "Groq" : "Azure OpenAI"}`);
-      return true;
-    } catch (e) {
-      toast.error("Could not switch provider", { description: (e as Error).message });
-      return false;
-    }
-  }, []);
-
   const setModel = useCallback(async (deployment: string) => {
     try {
       const next = await api.settings.setModel(deployment);
@@ -48,7 +36,6 @@ export function useSettings() {
   return {
     settings,
     loading,
-    setProvider,
     setModel,
     refresh,
   };

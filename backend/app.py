@@ -13,13 +13,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-HERE = Path(__file__).resolve().parent          # Foundary/backend/
-ROOT = HERE.parent                              # Foundary/
+HERE = Path(__file__).resolve().parent          # backend/
+ROOT = HERE.parent                              # project root
 MCP_DIR = ROOT / "mcp"
 FRONTEND_DIR = ROOT / "frontend"
 BUILD_DIR = FRONTEND_DIR / "dist"
 
-# Load env files for AZURE_OPENAI_ENDPOINT / ADMIN_PASSWORD / etc.
+# Load env files for GROQ_API_KEY / ADMIN_PASSWORD / etc.
 load_dotenv(MCP_DIR / ".env")
 load_dotenv(HERE / ".env", override=True)
 
@@ -378,10 +378,8 @@ async def api_health(user=Depends(auth.require_session)):
     return {
         "mcp_servers": servers_status,
         "total_tools": total_tools,
-        "openai_configured": bool(os.environ.get("AZURE_OPENAI_ENDPOINT")),
-        "deployment": agent.AOAI_DEPLOYMENT,
-        "openai_auth": agent.openai_auth_mode(),
-        "openai_connection": agent.openai_auth_source(),
+        "llm_configured": bool(os.environ.get("GROQ_API_KEY")),
+        "model": agent.active_model(),
     }
 
 
@@ -457,19 +455,13 @@ async def api_probe_mcp_server(id_: str, user=Depends(auth.require_session)):
 
 def _settings_payload(user: dict) -> dict:
     role = user.get("role", "user")
-    provider = config.get_llm_provider()
     return {
         "role": role,
         "can_manage_users": role == "super_admin",
         "can_manage_config": role in ("admin", "super_admin"),
         "llm": {
-            "provider": provider,
-            "providers": list(config.LLM_PROVIDERS),
-            "groq_available": bool(agent.GROQ_API_KEY),
             "configured": agent.provider_configured(),
-            "deployment": agent.active_model(),
-            "auth": agent.openai_auth_mode(),
-            "source": agent.openai_auth_source(),
+            "model": agent.active_model(),
         },
     }
 
@@ -479,19 +471,9 @@ async def api_get_settings(user=Depends(auth.require_session)):
     return _settings_payload(user)
 
 
-@app.put("/api/settings/provider")
-async def api_set_provider(req: Request, user=Depends(auth.require_admin)):
-    body = await req.json()
-    try:
-        config.set_llm_provider((body.get("provider") or "").strip())
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return _settings_payload(user)
-
-
 @app.get("/api/settings/models")
 async def api_list_models(_user=Depends(auth.require_session)):
-    """Models available for the active LLM provider (for the model picker)."""
+    """Models available on Groq (for the model picker)."""
     models = await asyncio.to_thread(agent.list_models)
     selected = agent.active_model()
     # Ensure the active model is always selectable, even if discovery is empty.
@@ -504,12 +486,8 @@ async def api_list_models(_user=Depends(auth.require_session)):
 async def api_set_model(req: Request, user=Depends(auth.require_admin)):
     body = await req.json()
     name = (body.get("deployment") or "").strip()
-    provider = config.get_llm_provider()
     try:
-        if provider == "groq":
-            config.set_groq_model(name)
-        else:
-            config.set_selected_deployment(name)
+        config.set_groq_model(name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return _settings_payload(user)

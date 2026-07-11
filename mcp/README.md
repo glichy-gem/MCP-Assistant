@@ -1,18 +1,14 @@
 # ServiceNow MCP — client library
 
-Python client for the **ServiceNow MCP server** (hosted on Azure Logic Apps / Foundry
-preview). The backend (`../backend`) imports `mcp_client` to call tools; a small
-`list_tools.py` script is kept so you can smoke-test the MCP server directly when the
-chat app misbehaves.
+Python client for the **ServiceNow MCP server**. The backend (`../backend`) imports 
+`mcp_client` to call tools; a small `list_tools.py` script is kept so you can smoke-test 
+the MCP server directly when the chat app misbehaves.
 
-- **Endpoint:** `https://logicapp-019951.azurewebsites.net/api/mcpservers/ServiceNowMCPserver/mcp`
-- **Transport:** **Streamable HTTP.** The server also advertises the legacy HTTP+SSE
-  transport, but that path requires **VNet integration** on the Logic App (it returns
-  `"Ensure that your logic app has enabled Vnet Integration."`), so this client uses the
-  Streamable-HTTP request/response path, which needs no VNet.
-- **Auth:** Key-based. The key is sent in the **`X-API-Key`** HTTP header (it's a
-  Logic App–wide key — primary or secondary). Confirmed working: `initialize` and `ping`
-  return 200.
+- **Endpoint:** Configure `MCP_ENDPOINT` in `.env` (e.g., a Logic App URL or custom server)
+- **Transport:** **Streamable HTTP.** The MCP client uses the Streamable-HTTP 
+  request/response path for compatibility.
+- **Auth:** Key-based. The key is sent in the **`X-API-Key`** HTTP header (or override 
+  via `MCP_AUTH_HEADER`). Confirmed working: `initialize` and `ping` return 200.
 
 ## Files
 
@@ -29,15 +25,16 @@ chat app misbehaves.
    pip install -r requirements.txt
    ```
 
-2. **Get a fresh API key.** In the Azure portal: **Logic App `logicapp-019951` →
-   MCP servers → Authentication → Method = Key-based → Generate key**. Copy it.
-   (Regenerating also rotates the previously exposed key.)
+2. **Get your MCP server endpoint and API key.**
+   - If using a Logic App: in the Azure portal, go to Logic App → MCP servers → 
+     Authentication → Method = Key-based → copy the endpoint and key.
+   - If using a different MCP server: get the endpoint and API key from your server admin.
 
 3. **Create your `.env`:**
    ```powershell
    Copy-Item .env.example .env
    ```
-   Open `.env` and paste your key into `MCP_API_KEY`. The endpoint is already filled in.
+   Open `.env` and fill in `MCP_ENDPOINT` and `MCP_API_KEY`.
    `.env` is git-ignored — the key never lands in source control or this repo's history.
 
 ## Smoke test
@@ -75,7 +72,7 @@ MCP definition engine.)
 **Fix applied:** in `wwwroot/Upload_a_multipart_file_attachment/workflow.json` the trigger
 schema was changed from `"type": "file"` to `"type": "string", "format": "binary"` (matching
 the working `Upload_a_binary_file_as_an_attachment` tool). After that, `tools/list` returns
-all 17 tools and calls succeed. If Foundry ever re-registers/overwrites that workflow and the
+all 17 tools and calls succeed. If the server is re-registered/overwrites that workflow and the
 500 returns, re-apply the same one-field change (or just remove the multipart-attachment tool).
 
 ## How the tools are actually registered (important)
@@ -91,7 +88,7 @@ Verified against the live schemas:
   Update accepts `sysid` (required) plus `short_description`, `description`, `work_notes`,
   `comments`, `state`. The action body forwards them to ServiceNow (`@triggerBody()` for create,
   `@removeProperty(triggerBody(),'sysid')` for update). **Caveat:** this is a direct edit to the
-  deployed workflow — the Foundry registration UI won't reflect it and re-registering from the
+  deployed workflow — the registration UI won't reflect it and re-registering from the
   portal could overwrite it (re-apply the edit if the fields disappear).
   Verified working: `INC0010001` was created and updated with field values through the MCP server.
 - A stray **duplicate MCP server** (`MCPServer`, tools suffixed `_1`) previously existed on

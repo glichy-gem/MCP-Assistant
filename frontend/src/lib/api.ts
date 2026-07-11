@@ -2,7 +2,6 @@ import type {
   AppSettings,
   CatalogTool,
   HealthResponse,
-  LlmProvider,
   McpProbeResult,
   McpServerConfig,
   McpServerInput,
@@ -67,8 +66,6 @@ export const api = {
 
   settings: {
     get: () => req<AppSettings>("/api/settings"),
-    setProvider: (provider: LlmProvider) =>
-      req<AppSettings>("/api/settings/provider", json("PUT", { provider })),
     models: () => req<ModelsResponse>("/api/settings/models"),
     setModel: (deployment: string) =>
       req<AppSettings>("/api/settings/model", json("PUT", { deployment })),

@@ -60,10 +60,8 @@ export interface HealthMcpServer {
 export interface HealthResponse {
   mcp_servers: HealthMcpServer[];
   total_tools: number;
-  openai_configured: boolean;
-  deployment: string;
-  openai_auth: string;
-  openai_connection: string | null;
+  llm_configured: boolean;
+  model: string;
 }
 
 /** MCP server config, redacted (api_key = "•••••abcd"). */
@@ -97,20 +95,13 @@ export interface McpProbeResult {
 
 /* ---------- App settings ---------- */
 
-export type LlmProvider = "azure" | "groq";
-
 export interface AppSettings {
   role: UserRole;
   can_manage_users: boolean;
   can_manage_config: boolean;
   llm: {
-    provider: LlmProvider;
-    providers: LlmProvider[];
-    groq_available: boolean;
     configured: boolean;
-    deployment: string;
-    auth: string;
-    source: string | null;
+    model: string;
   };
 }
 
