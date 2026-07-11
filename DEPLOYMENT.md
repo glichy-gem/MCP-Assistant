@@ -1,279 +1,120 @@
-# ServiceNow MCP Chat Assistant — Deployment Guide
+# Deployment Guide — 100% Free
 
-## Overview
-This is a full-stack application:
-- **Frontend**: React 18 + TypeScript (built as static files)
-- **Backend**: Python 3.11 + FastAPI
-- **Database**: PostgreSQL (you're using Neon ✓)
-- **LLM**: Groq (free tier)
+This app deploys as **one single service** (the FastAPI backend serves the built
+React frontend directly — see `backend/app.py`'s single-URL mode), so you don't
+need to host frontend and backend separately.
 
----
+**Total cost: $0/month.**
 
-## Recommended Deployment Architecture
+| Piece | Where | Cost |
+|---|---|---|
+| App (frontend + backend) | [Render.com](https://render.com) free web service (Docker) | Free |
+| Database | [Neon](https://neon.tech) free Postgres (already set up) | Free |
+| LLM | [Groq](https://console.groq.com) free API | Free |
 
-### Option 1: Railway.app (Easiest for beginners)
-**Pros**: One-click deploy, handles both frontend and backend, free tier available
-**Cost**: $5/month + usage
-
-1. **Push your repo to GitHub** (already done ✓)
-2. **Sign up at railway.app**
-3. **Create new project → GitHub → select your repo**
-4. **Add variables** in Railway dashboard:
-   ```
-   POSTGRES_HOST = your-neon-db-host
-   POSTGRES_USER = neondb_owner
-   POSTGRES_PASSWORD = your-password
-   POSTGRES_DB = neondb
-   POSTGRES_PORT = 5432
-   POSTGRES_SSLMODE = require
-   
-   GROQ_API_KEY = your-groq-key
-   GROQ_MODEL = llama-3.3-70b-versatile
-   
-   ADMIN_USER = admin
-   ADMIN_PASSWORD = strong-password
-   
-   GOOGLE_CLIENT_ID = (optional, leave empty for local auth only)
-   GOOGLE_CLIENT_SECRET = (optional)
-   GOOGLE_REDIRECT_URI = https://your-domain.railway.app/api/auth/google/callback
-   ```
-5. **Create Procfile** in repo root:
-   ```
-   build: cd frontend && npm install && npm run build
-   web: uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT
-   ```
-6. **Deploy** — Railway auto-deploys on push
+The only free-tier tradeoff: Render's free web services **spin down after
+~15 minutes of no traffic** and take ~30-50 seconds to wake up on the next
+request. Fine for a demo, portfolio, or internal tool — not for something that
+needs to always respond instantly.
 
 ---
 
-### Option 2: Vercel (Frontend) + Render (Backend)
-**Pros**: Industry standard, better performance
-**Cost**: Vercel free tier + Render ~$7/month
+## 1. Files already in this repo
 
-#### Frontend on Vercel:
-1. **Build locally**: `cd frontend && npm run build`
-2. **Push repo to GitHub**
-3. **Sign up vercel.com → Import repo**
-4. **Set build command**: `cd frontend && npm run build`
-5. **Set output directory**: `frontend/dist`
-6. **Deploy** ✓
+- **`Dockerfile`** — multi-stage build: builds the React frontend, then copies
+  it into the Python backend image. `CMD` binds to Render's `$PORT`.
+- **`.dockerignore`** — keeps `node_modules`, `.env` files, and secrets out of
+  the build.
+- **`render.yaml`** — a Render "Blueprint" that describes the service and its
+  env vars in one file, so Render can set it up automatically.
 
-#### Backend on Render:
-1. **Sign up render.com → New Web Service**
-2. **Connect your GitHub repo**
-3. **Set build command**: `pip install -r requirements.txt && pip install -r mcp/requirements.txt`
-4. **Set start command**: `uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT`
-5. **Add environment variables** (same as above)
-6. **Bind to port**: `$PORT`
-7. **Deploy** ✓
-8. **Update frontend .env** to point to Render backend URL
+You don't need to write any deployment config yourself — just push these to
+GitHub (already done if you're reading this in the repo) and point Render at
+the repo.
 
 ---
 
-### Option 3: Docker + Any Cloud (AWS/GCP/DigitalOcean/Linode)
-**Pros**: Full control, scalable
-**Cost**: $5-15/month
+## 2. Deploy
 
-#### Create Dockerfile:
-```dockerfile
-FROM python:3.11-slim
+### A. One-click via Blueprint (uses `render.yaml`)
 
-WORKDIR /app
+1. Go to **[dashboard.render.com/blueprints](https://dashboard.render.com/blueprints)**
+   and sign up/log in with GitHub (free, no card required).
+2. **New Blueprint Instance** → pick your `MCP-Assistant` repo.
+3. Render reads `render.yaml` and shows the service + a list of env vars
+   marked `sync: false` — it'll prompt you to fill these in before creating:
 
-# Backend deps
-COPY mcp/requirements.txt mcp/requirements.txt
-COPY backend/requirements.txt backend/requirements.txt
-RUN pip install -r mcp/requirements.txt && pip install -r backend/requirements.txt
+   | Variable | Where to get it |
+   |---|---|
+   | `POSTGRES_HOST` | Neon dashboard → your project → Connection string (just the host part) |
+   | `POSTGRES_USER` | Neon dashboard → Connection string |
+   | `POSTGRES_PASSWORD` | Neon dashboard → Connection string |
+   | `POSTGRES_DB` | Neon dashboard → Connection string (database name) |
+   | `GROQ_API_KEY` | [console.groq.com](https://console.groq.com) → API Keys → Create |
+   | `ADMIN_PASSWORD` | Pick a strong password — seeds the first super_admin login |
 
-# Frontend
-RUN apt-get update && apt-get install -y nodejs npm
-COPY frontend frontend
-RUN cd frontend && npm install && npm run build
+   `SESSION_SECRET` is auto-generated by Render (`generateValue: true`), and
+   `POSTGRES_PORT`, `POSTGRES_SSLMODE`, `GROQ_MODEL`, `ADMIN_USER` already have
+   sensible defaults baked into `render.yaml`.
 
-# Copy source
-COPY backend backend
-COPY mcp mcp
+4. Click **Apply** — Render builds the Docker image and deploys. First build
+   takes a few minutes (installing Python + Node deps, building the frontend).
+5. When it's live, Render gives you a URL like
+   `https://servicenow-mcp-assistant.onrender.com`.
 
-EXPOSE 8000
-CMD ["uvicorn", "app:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8000"]
-```
+### B. Manual (if you'd rather not use the Blueprint)
 
-#### Deploy to DigitalOcean/Linode/Heroku:
-1. **Build image**: `docker build -t servicenow-mcp .`
-2. **Push to Docker Hub** or container registry
-3. **Deploy** to DigitalOcean App Platform / Heroku / AWS ECS
-4. **Set environment variables** in platform dashboard
-
----
-
-## Environment Variables Checklist
-
-### Required:
-```
-POSTGRES_HOST
-POSTGRES_USER
-POSTGRES_PASSWORD
-POSTGRES_DB
-POSTGRES_PORT = 5432
-POSTGRES_SSLMODE = require
-
-GROQ_API_KEY
-GROQ_MODEL = llama-3.3-70b-versatile
-
-ADMIN_USER = admin
-ADMIN_PASSWORD = strong-random-password
-SESSION_SECRET = auto-generated (leave empty to auto-generate)
-```
-
-### Optional (Google OIDC):
-```
-GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET
-GOOGLE_REDIRECT_URI = https://your-domain/api/auth/google/callback
-```
+1. **[dashboard.render.com](https://dashboard.render.com)** → **New** → **Web Service**
+2. Connect your GitHub repo.
+3. **Runtime**: Docker (Render auto-detects the `Dockerfile`).
+4. **Instance type**: Free.
+5. **Environment** tab → add the same variables listed in the table above,
+   plus `POSTGRES_PORT=5432`, `POSTGRES_SSLMODE=require`,
+   `GROQ_MODEL=llama-3.3-70b-versatile`, `ADMIN_USER=admin`.
+6. **Create Web Service** → Render builds and deploys automatically on every
+   push to `main`.
 
 ---
 
-## Step-by-Step: Railway Deployment (Recommended for you)
+## 3. After it's deployed
 
-### 1. Prepare repo
-```bash
-git add .
-git commit -m "chore: add Procfile for deployment"
-git push
-```
-
-### 2. Create Procfile
-```bash
-echo 'build: cd frontend && npm install && npm run build
-web: uvicorn app:app --app-dir backend --host 0.0.0.0 --port $PORT' > Procfile
-git add Procfile
-git commit -m "chore: add Procfile for Railway deployment"
-git push
-```
-
-### 3. Go to railway.app
-- Sign up (free account)
-- Create new project
-- Select "GitHub repo"
-- Choose your MCP-Assistant repo
-- Click "Deploy"
-
-### 4. Add environment variables in Railway
-Dashboard → Project → Variables → Add:
-```
-POSTGRES_HOST=your-neon-db-host.neon.tech
-POSTGRES_PORT=5432
-POSTGRES_USER=neondb_owner
-POSTGRES_PASSWORD=your-neon-password
-POSTGRES_DB=neondb
-POSTGRES_SSLMODE=require
-
-GROQ_API_KEY=your-groq-api-key
-GROQ_MODEL=llama-3.3-70b-versatile
-
-ADMIN_USER=admin
-ADMIN_PASSWORD=strong-password-here
-
-GOOGLE_REDIRECT_URI=https://your-railway-domain.up.railway.app/api/auth/google/callback
-```
-
-**Get values from:**
-- Neon DB: https://console.neon.tech → your-project → Connection string
-- Groq API: https://console.groq.com → API Keys
-
-### 5. Deploy
-- Railway auto-deploys on push
-- Watch logs in dashboard
-- Get URL: `https://your-railway-domain.up.railway.app`
+1. Open the Render URL — you should see the login page.
+2. Log in with `ADMIN_USER` / `ADMIN_PASSWORD` (whatever you set above). This
+   seeds a `super_admin` account on first boot.
+3. **Change that password** from the Users page once you're in, then you can
+   remove `ADMIN_PASSWORD` from Render's env vars (it's only read on the very
+   first boot, when the users table is empty).
+4. Go to the **MCP** page and add your ServiceNow MCP server (endpoint + API
+   key) — this is stored in `backend/connections.json` on the Render instance,
+   not in your repo.
+5. Send a test chat message to confirm Groq + the MCP server both work.
 
 ---
 
-## Domain Setup (Optional but Recommended)
+## 4. Notes on the free tier
 
-### Add custom domain:
-1. **Buy domain** from GoDaddy/Namecheap/Cloudflare
-2. **Point to your deployment**:
-   - Railway: Add domain in project settings
-   - Vercel: Add domain in project settings
-   - Render: Add domain in service settings
-3. **Enable HTTPS** (all platforms auto-provide free SSL)
-4. **Update GOOGLE_REDIRECT_URI** if using Google auth:
-   ```
-   https://your-domain.com/api/auth/google/callback
-   ```
-
----
-
-## Post-Deployment Checklist
-
-- [ ] Frontend loads at your domain
-- [ ] Can log in with admin credentials
-- [ ] MCP servers are registered and show green/connected
-- [ ] Chat works (test with a simple message)
-- [ ] Tools load and can be called
-- [ ] Admin page loads, users can be managed
-- [ ] Settings page shows correct LLM (Groq only)
-- [ ] Database is persisting data (create test user)
+- **Cold starts**: after ~15 min idle, the next request wakes the container
+  (30-50s). If that's a dealbreaker, Render's paid "Starter" plan ($7/mo)
+  removes the sleep — but that's an upgrade decision for later, not required
+  to run this.
+- **Neon free tier**: also has an autosuspend after inactivity, and wakes
+  automatically on the next query — the `mcp/README.md` gotcha about the
+  ServiceNow PDI hibernating (dev424497) is a separate, unrelated sleep
+  (that one's on the ServiceNow side).
+- **No custom domain required** — the `onrender.com` subdomain is free and
+  has HTTPS by default. You can attach your own domain for free too (Render
+  → Settings → Custom Domains), you'd just need to already own the domain.
+- **Google OIDC is optional** — leave `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`
+  unset and the app just uses local username/password login.
 
 ---
 
-## Monitoring & Maintenance
+## 5. Troubleshooting
 
-### View logs:
-- **Railway**: Dashboard → Deployments → Logs
-- **Render**: Dashboard → Service → Logs
-- **Vercel**: Dashboard → Deployments → Logs
-
-### Common issues:
-| Issue | Fix |
-|---|---|
-| "502 Bad Gateway" | Check backend logs, verify Postgres connection |
-| "Cannot connect to Groq" | Check `GROQ_API_KEY` is valid and in env |
-| "Database connection failed" | Verify `POSTGRES_*` vars, check Neon status |
-| "Styles not loading" | Frontend build failed — check build logs |
-
----
-
-## Scaling (When needed)
-
-- **More users**: Upgrade Neon Postgres plan
-- **Higher LLM throughput**: Switch to Groq paid tier
-- **More concurrent requests**: Upgrade Railway/Render plan
-- **CDN for frontend**: Add Cloudflare in front
-
----
-
-## Security Checklist
-
-Before going live:
-- [ ] Change `ADMIN_PASSWORD` to something strong
-- [ ] Set `GROQ_API_KEY` to a new key (rotate old one)
-- [ ] Set `SESSION_SECRET` to a random string or let app auto-generate
-- [ ] Use HTTPS (all platforms provide free SSL)
-- [ ] Disable public signups in backend/.env or via UI (optional)
-- [ ] Regularly audit user roles and tool grants
-- [ ] Enable Google OIDC if you want SSO
-
----
-
-## Which option to pick?
-
-| Platform | Best for | Setup time | Cost | Recommendation |
-|---|---|---|---|---|
-| **Railway** | All-in-one simplicity | 15 min | $5-10/mo | ⭐ Start here |
-| **Vercel + Render** | High performance | 30 min | Free-15/mo | When you need scale |
-| **Docker + VPS** | Full control | 1 hour | $5-20/mo | When you need customization |
-
----
-
-## Questions?
-
-If you hit issues during deployment, check:
-1. Environment variables are set correctly
-2. Postgres is accessible (Neon might rate-limit)
-3. Groq API key is valid
-4. Frontend build succeeded
-5. Backend is listening on correct port
-
-Good luck! 🚀
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Build fails on `npm run build` | Frontend TypeScript error | Run `npm run build` locally first to catch it before pushing |
+| "Database connection failed" on boot | Wrong Postgres env vars, or Neon project paused | Double-check host/user/password/db against Neon's connection string |
+| App refuses to start, log says `ADMIN_PASSWORD is not set` | Missing env var on first boot | Set `ADMIN_PASSWORD` in Render env vars, redeploy |
+| Chat returns "LLM not configured" | `GROQ_API_KEY` missing/invalid | Check the key in Render env vars matches console.groq.com |
+| First request after idle takes ~30s | Free-tier cold start | Expected behavior — not a bug |
