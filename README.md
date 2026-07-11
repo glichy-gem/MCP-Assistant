@@ -53,7 +53,7 @@ cd frontend && npm install
 
 ```bash
 uvicorn app:app --app-dir backend --port 8000 --reload   # terminal 1
-cd frontend && npm run dev                                # terminal 2
+cd frontend && npm run dev                               # terminal 2
 ```
 
 Open <http://localhost:5173>.
