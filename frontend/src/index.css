@@ -169,7 +169,13 @@
 }
 .prose-chat table {
   border-collapse: collapse;
-  width: 100%;
+  /* No fixed width: let the browser size each column to its content (the
+     automatic table layout algorithm). A forced width:100% squeezes every
+     column into the bubble's width regardless of column count, which breaks
+     short words like "Description" mid-letter once there are more than a
+     handful of columns. Tables wider than the bubble scroll horizontally via
+     .table-wrapper instead of being crushed. */
+  width: auto;
   font-size: 0.85rem;
 }
 .prose-chat th,
@@ -177,10 +183,7 @@
   border: 1px solid hsl(var(--border));
   padding: 0.35rem 0.6rem;
   text-align: left;
-  /* overflow-wrap:anywhere only breaks mid-word when content would otherwise
-     overflow the cell — short words like "Field" are never broken. */
-  overflow-wrap: anywhere;
-  min-width: 5rem;
+  white-space: nowrap;
 }
 .prose-chat th {
   background: hsl(var(--muted));
